@@ -1,0 +1,88 @@
+//properties([pipelineTriggers([githubPush()])])
+
+ pipeline {
+     agent { label 'Docker-POC' }
+    // parameters {
+    //     string(defaultValue: 'apps/edm/pasoe-ecs', description: 'Path to the component', name: 'component_dir')
+    //     choice(choices: 'dev\ntest\nuat\nprod', description: 'What is the destination', name: 'destination')
+    // }
+    environment{
+        region = 'us-east-1'
+    }
+    stages {
+        stage ('Initialize Properties') {
+            steps {
+                dir(component_dir) {
+                    script {
+                        if(destination.equals("prod")){
+                            properties = readProperties file: 'envs/prod.properties'
+                            env.environment = 'prod'
+                            env.bucket = 'bucket=terraform-state-fhmc-prod'
+                        }
+                        else
+                        {
+                            properties = readProperties file: 'envs/dev.properties'
+                            env.environment = 'default'
+                            env.bucket = 'bucket=terraform-state-fhmc-np'
+                        }
+                    }
+                    
+                }
+            }
+        }
+        stage('Initialize Environment') {
+            steps {
+                dir(component_dir) {
+                     script {
+                        sh '''
+                            echo '=== Initializing ${environment} ==='
+                            terraform init \
+                            -backend-config="region=${region}" \
+                            -backend-config=${bucket} \
+                            -backend-config="key=$destination/$component_dir/terraform.tfstate" \
+                            -backend-config="profile=${environment}" \
+                            -force-copy \
+                            -backend=true
+                        '''
+                    }
+                }
+            }
+        }
+       
+        stage('Check Formatting') {
+            steps {
+                echo '=== Checking Formatting ==='
+               // dir(component_dir) {
+                 //   sh 'terraform fmt -check -diff'
+                //}
+            }
+        }
+        stage('Validate Config') {
+            steps {
+                echo '=== Validating Config ==='
+                //dir(component_dir) {
+                  //  sh 'terraform validate'
+               // }
+            }
+        }
+        stage('Apply') {
+            steps {
+                echo '=== Applying Changes ==='
+                dir(component_dir) {
+                    sh 'terraform apply -auto-approve -input=false -var-file=envs/$destination.tfvars'
+                }
+            }
+        }
+    }
+        post {
+            failure {  
+                emailext subject: "ERROR CI: Project name -> ${env.JOB_NAME}", \
+                body: "<b>Build Failed</b></br>" +
+                "Project: ${env.JOB_NAME}</br>" +
+                "Build Number: ${env.BUILD_ID}</br>" +
+                "Build URL: ${env.BUILD_URL}", \
+                to: "${properties.recipient}", \
+                mimeType: 'text/html';
+            }  
+        }
+}
