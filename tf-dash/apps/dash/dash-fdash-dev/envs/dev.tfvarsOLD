@@ -1,0 +1,79 @@
+aws_profile = "996190702173_Dash_Developer_Terraform"
+aws_region = "us-east-1"
+env = "dev"
+appName = "dash-ocr-ecs2"
+
+# Networking
+domain = "fhmcdev.cloud"
+vpc_id = "vpc-113d0d75"
+subnets = ["subnet-0d4ed851a151f9a57", "subnet-0e0437eb43920617c"]
+cidr_list = ["10.0.0.0/8"]
+
+# EC2
+ec2_ami = "ami-0bd69a09e4a109f18"
+instance_type = "t3.large"
+ec2_subnet = "subnet-0d4ed851a151f9a57"
+ec2_profile = "ecsInstanceRole"
+ecs_task_execution_role_arn = "arn:aws:iam::996190702173:role/ecsDashTaskExecutionRole"
+ec2_key = "" # this is disabled in the AMI.
+ec2_cpu_credits = "standard"
+ebs_type = "gp3"
+ebs_size = 30
+ebs_kms_id = "arn:aws:kms:us-east-1:996190702173:key/6668d08d-0fbd-4496-8a5a-1b0e56613776"
+security_groups = ["sg-0ddbc8873a1945163","sg-0f8e6354752a2ad94"]
+
+# ALB
+albLogBucket = "fhmc-dev-logs"
+health_check_url = "/fda-doc-docker/actuator/health"
+ssl_policy = "ELBSecurityPolicy-FS-1-2-2019-08"
+# alb_security_groups = ["sg-015879d766e44ffdd"]
+security_group_id = "sg-015879d766e44ffdd"
+
+# Environment Variables
+catalina_out = "/proc/1/fd/1"
+instance_name = "oepas1"
+max_agents = 2
+max_conn_per_agent = 2
+max_abl_sess_per_agent = 50
+work_dir = "/docimg"
+
+# Container
+container_name = "fda-doc-docker"
+#container_image = "996190702173.dkr.ecr.us-east-1.amazonaws.com/fda-doc-docker:latest"
+container_image = "996190702173.dkr.ecr.us-east-1.amazonaws.com/nginx:latest"
+container_cpu = "1024"  # 1 vCPU
+container_memory = "2048"  # 2GB ram
+container_port = 9085
+host_port = 9085
+desireCount = 1
+volumes = [
+  { name = "docs",      host_path = "/docs" },
+  { name = "documents", host_path = "/docs/documents" },
+  { name = "code",      host_path = "/docs/documents/development/code" },
+  { name = "tmp",       host_path = "/docimg/development/tmp" },
+  { name = "da01",      host_path = "/da01" }
+]
+mount_points = [
+  { "sourceVolume": "docs",       "containerPath": "/docs" },
+  { "sourceVolume": "documents",  "containerPath": "/documents" },
+  { "sourceVolume": "code",       "containerPath": "/code" },
+  { "sourceVolume": "tmp",        "containerPath": "/docimg/development/tmp" },
+  { "sourceVolume": "tmp",        "containerPath": "/docimg/tmp" },
+  { "sourceVolume": "da01",       "containerPath": "/da01" }
+]
+
+# Autoscaling
+/*
+min_capacity = 1
+max_capacity = 2
+min_size     = 1
+max_size     = 4
+*/
+#target_value = 10
+#scale_in_cooldown           = 30
+#scale_out_cooldown          = 30
+/*scale_up_adjustment = 1
+scale_up_cooldown = 60
+scale_down_adjustment = -1
+scale_down_cooldown = 300
+*/

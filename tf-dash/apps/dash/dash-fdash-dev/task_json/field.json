@@ -1,0 +1,94 @@
+[
+  {
+    "name": "${container_name6}",
+
+    "image": "${container_image6}",
+    "cpu": ${pythoncontainer_cpu},
+    "memory": ${pythoncontainer_memory},
+    "networkMode": "awsvpc",
+    "portMappings": [
+      {
+        "containerPort": ${container_port6},
+        "hostPort6": ${host_port6}
+      }
+    ],
+    "dependsOn" : [
+    {
+      "containerName": "${dependent_container_name}",
+      "condition": "COMPLETE"
+    }],
+    "environment": [
+      {
+        "name" : "python_environment",
+        "value" : "${env}"
+      },
+      {
+        "name" : "infra",
+        "value" : "${infra}"
+      },
+      {
+        "name" : "LD_PRELOAD",
+        "value" : "${ld_preload_cmd}" 
+      } 
+    ],
+    "healthCheck": {
+      "retries": 3,
+      "command": [
+        "CMD-SHELL",
+        "ps -aux | grep \"Python\" || exit 1"
+      ],
+      "timeout": 5,
+      "interval": 30,
+      "startPeriod": null
+    },
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+          "awslogs-group": "${log_configuration_field_new}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+      }
+    },
+    "mountPoints": [
+      { 
+        "sourceVolume" : "${buss_cont_SourceVolume}", 
+        "containerPath" : "${buss_cont_ContainerVol}",
+         "readOnly" : false
+     }]
+  },
+  {
+    "name" : "${ag_container_name}",
+    "image"  : "${ag_container_image}",
+    "essential"  : false,
+    "entrypoint" : ["/bin/sh", "-c"],
+    "command" : ["ARCHIVE=$(mktemp) && wget -O $ARCHIVE \"$DT_API_URL/v1/deployment/installer/agent/unix/paas/latest?Api-Token=$DT_PAAS_TOKEN&$DT_ONEAGENT_OPTIONS\" && unzip -o -d /opt/dynatrace/oneagent $ARCHIVE && rm -f $ARCHIVE"],
+    "environment" : [
+    {
+      "value": "${dt_api_url}",
+      "name": "DT_API_URL"
+    },
+    {
+      "value": "${dt_oneagent_options}",
+      "name": "DT_ONEAGENT_OPTIONS"
+    },
+    {
+      "value": "${dt_pass_token}",
+      "name": "DT_PAAS_TOKEN"
+    } ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+          "awslogs-group": "${log_configuration_field_new_ag}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+      }
+    },
+    "mountPoints" : [
+     { 
+        "sourceVolume" : "${oneAgent_SourceVolume}", 
+        "containerPath" : "${oneAgent_ContainerVol}",
+        "readOnly" : false
+    }]
+  }
+]
+

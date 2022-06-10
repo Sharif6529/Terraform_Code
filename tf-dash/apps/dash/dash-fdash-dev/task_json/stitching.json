@@ -1,0 +1,81 @@
+[
+  {
+    "name": "${container_name11}",
+
+    "image": "${container_image11}",
+    "cpu": ${container_cpu},
+    "memory": ${container_memory},
+    "networkMode": "awsvpc",
+    "portMappings": [
+      {
+        "containerPort": ${container_port11},
+        "hostPort11": ${host_port11}
+      }
+    ],
+    "dependsOn" : [
+      {
+        "containerName": "${dependent_container_name}",
+        "condition": "COMPLETE"
+      }
+    ],
+    "environment": [
+      {
+        "name" : "JAVA_OPTS",
+        "value" : "${java_secret}"
+      },
+      {
+        "name" : "LD_PRELOAD",
+        "value" : "${ld_preload_cmd}" 
+      }
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+          "awslogs-group": "${log_configuration_stitching}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+      }
+    },
+    "mountPoints": [
+      { 
+        "sourceVolume" : "${buss_cont_SourceVolume}", 
+        "containerPath" : "${buss_cont_ContainerVol}",
+         "readOnly" : false
+     }]
+  },
+  {
+    "name" : "${ag_container_name}",
+    "image"  : "${ag_container_image}",
+    "essential"  : false,
+    "entrypoint" : ["/bin/sh", "-c"],
+    "command" : ["ARCHIVE=$(mktemp) && wget -O $ARCHIVE \"$DT_API_URL/v1/deployment/installer/agent/unix/paas/latest?Api-Token=$DT_PAAS_TOKEN&$DT_ONEAGENT_OPTIONS\" && unzip -o -d /opt/dynatrace/oneagent $ARCHIVE && rm -f $ARCHIVE"],
+    "environment" : [
+    {
+      "value": "${dt_api_url}",
+      "name": "DT_API_URL"
+    },
+    {
+      "value": "${dt_oneagent_options}",
+      "name": "DT_ONEAGENT_OPTIONS"
+    },
+    {
+      "value": "${dt_pass_token}",
+      "name": "DT_PAAS_TOKEN"
+    } ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+          "awslogs-group": "${log_configuration_stitching_ag}",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+      }
+    },
+    "mountPoints" : [
+     { 
+        "sourceVolume" : "${oneAgent_SourceVolume}", 
+        "containerPath" : "${oneAgent_ContainerVol}",
+        "readOnly" : false
+    }]
+  }
+]
+
