@@ -1,0 +1,40 @@
+# stage 1 Install Node and Angular CLI
+FROM 996190702173.dkr.ecr.us-east-1.amazonaws.com/node14150:latest as node
+
+# stage 2 copy codebase
+WORKDIR /app
+COPY . .
+
+# stage 3 install angular cli and dependencies of our application
+RUN npm i -g @angular/cli@11.2.11
+RUN npm install
+
+# stage 4 set default arguments
+ARG HREF='/dashui'
+ARG PROFILE='dev'
+RUN echo "environment selected =======" ${PROFILE}
+
+# stage 5 build our angular application
+RUN ng build --prod --base-href=${HREF} --configuration=${PROFILE} --aot=true
+CMD echo "Preparing the new build...."
+
+# stage 6 install nginx and setup nginx configs
+# SHELL [ "systemctl", "stop", "nginx" ]
+FROM nginx:alpine
+# RUN systemctl stop nginx
+# COPY --from=node /app/nginx.conf /etc/nginx/conf.d/
+# COPY --from=node /app/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=node /app/nginx.conf /etc/nginx/nginx.conf
+COPY --from=node /app/dist/fmc-ui /usr/share/nginx/html
+
+# RUN rm -rf  /usr/share/nginx/angular/*
+# SHELL [ "systemctl", "restart", "nginx" ]
+# RUN rm -rf /opt/fdash_app/fdash-dash-ui/fmc-ui
+EXPOSE 80 443
+CMD [ "nginx", "-g", "daemon off;" ]
+
+# RUN systemctl restart nginx
+RUN ls -l /usr/share/nginx/html
+RUN ls -l /usr/share/
+
+RUN echo "Restarting the Nginx Service"
