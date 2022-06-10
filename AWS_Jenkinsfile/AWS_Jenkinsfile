@@ -1,0 +1,412 @@
+//Change values for lines: 116:AWS ECR & 117:TF IMG VAR
+import java.time.*
+import java.time.format.DateTimeFormatter
+List category_list = ["\"SELECT\"","\"BUILD\"","\"DEPLOY\"","\"DESTROY\""]
+String categories = buildScript(category_list)
+String buildScript(List values){
+	 return "return $values"
+	}
+String buildHtml = populatebuildHtml()
+	
+	String populatebuildHtml(){
+	return """
+	 html=""
+	 if (SELECT_ACTION.equals('BUILD') || SELECT_ACTION.equals('DEPLOY') || SELECT_ACTION.equals('DESTROY')){
+	    html="<input name='value' value='dashproject' class='setting-input' type='text'>"
+	 }
+	 else {
+	    html="Not Applicable"
+	 }
+	    return html
+	 """
+	}
+
+String buildTckt = populatebuildTckt()
+	
+	String populatebuildTckt(){
+	return """
+	 html=""
+	 if (SELECT_ACTION.equals('DEPLOY')){
+	    html="<input name='value' value='' class='setting-input' type='text'>"
+	 }
+	 else {
+	    html="Not Applicable"
+	 }
+	    return html
+	 """
+	}
+
+String deployHtml = populatedeployHtml()
+	
+	String populatedeployHtml(){
+	return """
+	 html=""
+	 if (SELECT_ACTION.equals('DEPLOY')){
+	    html="<input name='value' value='' class='setting-input' type='text'>"
+	 }
+	 else {
+	    html="Not Applicable"
+	 }
+	    return html
+	 """
+	}
+    List default_item = ["\"Not Applicable\""]
+    List uat = ["\"dev\"","\"test\"","\"perf\"","\"uat\"","\"prod\""]
+    List np = ["\"dev\"","\"test\"","\"perf\""]
+    String build_env = populateEnv(default_item,uat,np)
+    String populateEnv(List default_item, List uat, List np){
+	return """
+     if (SELECT_ACTION.equals('DEPLOY') || SELECT_ACTION.equals('BUILD')) {
+	    return $uat
+	 }
+	 else if(SELECT_ACTION.equals('DESTROY')){
+	    return $np
+	 }
+	 else{
+	    return $default_item
+	 }
+	 """
+	}
+
+	properties([
+	 parameters([
+	 [$class: 'ChoiceParameter', choiceType: 'PT_SINGLE_SELECT', description: 'Select the action you would like to trigger',
+     name: 'SELECT_ACTION', script: [$class: 'GroovyScript', fallbackScript: [classpath: [], sandbox: true, script: 'return ["ERROR"]'], 
+     script: [classpath: [], sandbox: true,script: categories]]],
+
+     [$class: 'CascadeChoiceParameter', choiceType: 'PT_SINGLE_SELECT',name: 'ENVIRONMENT', description: 'Choose enviorment', referencedParameters: 'SELECT_ACTION', 
+	 script: [$class: 'GroovyScript', fallbackScript: [classpath: [], sandbox: true, script: 'return ["error"]'], 
+	 script: [classpath: [], sandbox: true, script: build_env]]],
+	 
+     [$class: 'DynamicReferenceParameter', choiceType: 'ET_FORMATTED_HTML', description: 'Please input your terraform git branch to build',
+	 name: 'FEATURE_BRANCH', omitValueField: true, randomName: 'choice-parameter-123456', referencedParameters: 'SELECT_ACTION',
+	 script: [ $class: 'GroovyScript', fallbackScript: [ classpath: [], sandbox: true, script: 'return [\'Error message\']' ],
+	 script: [ classpath: [], sandbox: true, script: buildHtml ] ] ],
+	 
+     [$class: 'DynamicReferenceParameter', choiceType: 'ET_FORMATTED_HTML', description: 'Please input the image tag version',
+	 name: 'IMAGE_TAG', omitValueField: true, randomName: 'choice-parameter-123457', referencedParameters: 'SELECT_ACTION',
+	 script: [ $class: 'GroovyScript', fallbackScript: [ classpath: [], sandbox: true, script: 'return [\'Error message\']' ],
+	 script: [ classpath: [], sandbox: true, script: deployHtml ] ] ],
+
+     [$class: 'DynamicReferenceParameter', choiceType: 'ET_FORMATTED_HTML', description: 'Please input your CHG ticket',
+	 name: 'SNOW_TICKET', omitValueField: true, randomName: 'choice-parameter-123456', referencedParameters: 'SELECT_ACTION',
+	 script: [ $class: 'GroovyScript', fallbackScript: [ classpath: [], sandbox: true, script: 'return [\'Error message\']' ],
+	 script: [ classpath: [], sandbox: true, script: buildTckt ] ] ]
+     ])
+	])
+	
+
+ pipeline {
+     options {
+	 ansiColor('xterm')
+	 buildDiscarder(logRotator(numToKeepStr:'25'))
+	 disableConcurrentBuilds()
+	 timeout(time: 50, unit: 'MINUTES')
+	 timestamps()
+	 }
+	 
+     agent { label 'docker' }
+
+    environment{
+        AWS_REGION='us-east-1'
+	    APP_NAME = 'fdash-dash-ui'
+        IMG_VAR = 'fdash-dash-ui-image'
+        STATE_BUCKET_PREFIX='fdash'
+    	REGISTRY = "996190702173.dkr.ecr.us-east-1.amazonaws.com"
+	    COMP_DIR = 'terrafromBranch/apps/dash/dash-fdash-dev'
+    }
+    stages {
+        stage('Set Build Name & Variables') {
+            steps {
+                script {
+                    if (params.SELECT_ACTION != 'SELECT') {
+
+                        wrap([$class: 'BuildUser']) {
+                            BUILD_USER_NAME = "${BUILD_USER}"
+                        }
+                            env.CLUSTER='${APP_NAME}-${ENVIRONMENT}-cluster'
+                            env.SERVICE='${APP_NAME}-${ENVIRONMENT}'
+                            currentBuild.displayName = "#${currentBuild.number} - ${ENVIRONMENT} - ${SELECT_ACTION} - ${BUILD_USER_NAME}"
+                            currentBuild.description = "#${currentBuild.number} - ${ENVIRONMENT} - ${SELECT_ACTION} - ${BUILD_USER_NAME}"
+                            echo "Terraform Branch is ${params.FEATURE_BRANCH}"
+                            echo "Enviorment is ${params.ENVIRONMENT}"
+                            echo "Image tag is ${IMAGE_TAG}"
+                        def AWS_ENVIRONMENT_MAP = ['dev':'preprod', 'test':'preprod','perf':'preprod','uat':'preprod','prod':'prod']
+                        def ACCT_MAP = ['preprod': '996190702173',  'prod': 'yyyyyyyyyyyyyyyy']
+                        def ROLE_MAP = ['preprod': 'ec2-jenkins', 'prod': 'XXXXXXXXXXXXXX']
+                            env.AWS_ENVIRONMENT = AWS_ENVIRONMENT_MAP[ENVIRONMENT]
+                            env.AWS_ACCOUNT = ACCT_MAP[AWS_ENVIRONMENT]
+                            env.AWS_ROLE = ROLE_MAP[AWS_ENVIRONMENT]
+                            echo "Account is ${AWS_ACCOUNT}"
+                            echo "Environment is ${AWS_ENVIRONMENT}"
+                            echo "Role is ${AWS_ROLE}"
+                            env.REPOSITORY = "${REGISTRY}/${APP_NAME}-${ENVIRONMENT}"
+                            echo "Repo is ${REPOSITORY}"
+                    } else {
+                        currentBuild.displayName = "#${currentBuild.number} - Commit/PR Build"
+                        currentBuild.description = "#${currentBuild.number} - Commit/PR Build"
+                    }
+                }
+            }
+        }
+        stage('Access Control') {
+            when {
+                expression { params.SELECT_ACTION != 'SELECT' }
+            }
+            steps {
+                script{
+                    List prod_list = ['Shariful Islam' ]
+                    if ((params.ENVIRONMENT == 'uat' || params.ENVIRONMENT == 'prod') && prod_list.contains(BUILD_USER_NAME.toString().trim()) ) {
+                        echo "Environment is ${ENVIRONMENT} and authorized user is ${BUILD_USER_NAME}."
+                    }else if (params.ENVIRONMENT == 'dev' || params.ENVIRONMENT == 'test' || params.ENVIRONMENT == 'perf') {
+                        echo "Environment is ${ENVIRONMENT} and authorized user is ${BUILD_USER_NAME}."
+                    }else {
+                        error("Environment is ${ENVIRONMENT} and ${BUILD_USER_NAME} is unauthorized user!!!.")
+                    }
+                }
+            }
+        }
+        stage('Clean Up & Checkout') {
+              when {
+                expression { params.SELECT_ACTION != 'SELECT' || params.SELECT_ACTION != 'DEPLOY' || params.SELECT_ACTION != 'DESTROY'}
+            }
+            steps {
+                // Clean before build
+                cleanWs()
+                // We need to explicitly checkout from SCM here
+                checkout scm
+                script {
+                    env.APPLICATION_VER = "1.0.0"
+                    env.BUILD_VERSION = "${APPLICATION_VER}.${BUILD_NUMBER}"
+                }
+            }
+        }
+        stage('Checkout Infra') {
+            when {
+                expression { params.SELECT_ACTION != 'SELECT'}
+            }
+            steps {
+                sh """
+                    rm -rf terrafromBranch
+                    git clone --depth 1 -b ${FEATURE_BRANCH} git@github.fhmc.local:Freedom/terraform.git ./terrafromBranch
+                """
+            }
+        }
+
+	    stage ("SonarQube PR Analysis") {	
+            when {	
+                expression{env.CHANGE_ID != null }	
+            }	
+            steps {	
+                script {	
+                    def scannerHome = 'sonarqube'
+                    withSonarQubeEnv(installationName: 'SonarProd', credentialsId: 'SonarQube-Key-Prod') {
+                    sh 	"/data/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonarqube/bin/sonar-scanner " +
+                        " -Dsonar.projectKey=FMC-DocAutomation_${APP_NAME}" +
+                        " -Dsonar.pullrequest.key=${CHANGE_ID}" +
+                        " -Dsonar.sources=src/ " +
+                        " -Dsonar.exclusions=" +
+                        " -Dsonar.pullrequest.branch=${BRANCH_NAME}" +
+                        " -Dsonar.pullrequest.base=${CHANGE_TARGET}" +
+                        " -Dsonar.links.ci=${BUILD_URL}" +
+                        " -Dsonar.host.url=https://sonarqube.freedommortgage.com"
+                    }	
+                }	
+            }	
+        }	
+        stage ("SonarQube Branch Analysis") {	
+            when{
+                anyOf{
+                    allOf{
+                        expression{env.CHANGE_ID == null}
+                        expression{params.SELECT_ACTION == 'BUILD'}
+                    }
+                }
+            }
+            steps {	
+                script {	
+                    def scannerHome = 'sonarqube'
+                    withSonarQubeEnv(installationName:'SonarProd', credentialsId: 'SonarQube-Key-Prod') {
+                    sh  "/data/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/sonarqube/bin/sonar-scanner " +
+                        " -Dsonar.projectKey=FMC-DocAutomation_${APP_NAME}" +
+                        " -Dsonar.sources=src/ " +
+                        " -Dsonar.exclusions=" +
+                        " -Dsonar.branch.name=${BRANCH_NAME}" +
+                        " -Dsonar.links.ci=${BUILD_URL}" +
+                        " -Dsonar.host.url=https://sonarqube.freedommortgage.com"
+                        }	
+                    }	
+                }	
+            }	
+        stage("PR Quality Gate") {	
+            when {	
+                allOf {	
+                    expression { env.CHANGE_ID != null }	
+                }	
+            }
+            steps {
+                script {
+                    //sleep(10)
+                    timeout(time: 5, unit: 'MINUTES') {
+                        waitForQualityGate abortPipeline: true
+                    }
+                }
+            }
+        }
+        stage('Build Image') {
+            when {
+                expression { params.SELECT_ACTION == 'BUILD' }
+            }
+                steps {
+                    sh 'aws ecr get-login-password | docker login --username AWS --password-stdin 996190702173.dkr.ecr.us-east-1.amazonaws.com'
+                        echo "=== Building $APP_NAME-${ENVIRONMENT} Docker Image ==="
+                    script {
+                        env.IMAGE_TAG = "${APP_NAME}-${ENVIRONMENT}-${APPLICATION_VER}.${BUILD_NUMBER}"
+                        echo "image tag ${IMAGE_TAG}"
+                        IMAGE = docker.build( "${APP_NAME}-${ENVIRONMENT}:${IMAGE_TAG}", "--build-arg APP=$APP_NAME --build-arg PROFILE=$ENVIRONMENT  -f ./docker/Dockerfile .")
+                    }
+                }
+            }
+        stage('Deploy Image to ECR') {
+            when {
+                expression { params.SELECT_ACTION == 'BUILD' }
+            }
+            steps {
+                    script {
+                        docker.withRegistry("https://" + REPOSITORY) {
+                        echo "Within the registry block"
+                        IMAGE.push()
+                        IMAGE.push("latest")
+                    }
+                }
+            }
+        }
+        stage('Pull Image for Release') {
+            when {
+                expression { params.SELECT_ACTION == 'DEPLOY' && params.ENVIRONMENT == 'uat' || params.ENVIRONMENT == 'prod'}
+            }
+            steps {
+                sh ''' 
+                    aws ecr get-login-password | docker login --username AWS --password-stdin 996190702173.dkr.ecr.us-east-1.amazonaws.com
+                    docker pull 996190702173.dkr.ecr.us-east-1.amazonaws.com/${APP_NAME}:${IMAGE_TAG}
+                    docker tag 996190702173.dkr.ecr.us-east-1.amazonaws.com/${APP_NAME}:${IMAGE_TAG} ${AWS_ENVIRONMENT}.dkr.ecr.us-east-1.amazonaws.com/${APP_NAME}:${APP_NAME}-${APPLICATION_VER}-${ENVIRONMENT}.${BUILD_NUMBER}
+                    docker push ${AWS_ENVIRONMENT}.dkr.ecr.us-east-1.amazonaws.com/${APP_NAME}:${APP_NAME}-${APPLICATION_VER}-${ENVIRONMENT}.${BUILD_NUMBER}
+                        
+                '''
+            }
+        }
+        stage ('Initialize Properties') {
+            when {
+                expression { params.SELECT_ACTION != 'SELECT' || params.SELECT_ACTION == 'DEPLOY' || params.SELECT_ACTION == 'DESTROY'}
+            }
+            steps {
+                sh 'echo "Intializing Property"'
+                dir(COMP_DIR) {
+                    sh 'pwd'
+                    script {
+                        if(params.ENVIRONMENT=="prod"){
+                            properties = readProperties file: 'envs/prod.properties'
+                            env.env1 = 'prod'
+                            env.bucket = 'bucket=terraform-state-fhmc-prod'
+                        }else
+                        {
+                            echo "about to read file"
+                            properties = readProperties file: 'envs/dev.properties'
+                            echo "file read"
+                            env.env1 = 'dev'
+                            env.bucket = 'bucket=terraform-state-fhmc-np'
+                        }
+                    }
+                }
+            }
+        }
+        stage('Initialize Environment') {
+            when {
+                 expression { params.SELECT_ACTION != 'SELECT' || params.SELECT_ACTION == 'DEPLOY' || params.SELECT_ACTION == 'DESTROY'}
+            }
+            steps {
+                dir(COMP_DIR) {
+                        script {
+                        sh '''
+                            echo "=== Initializing ${ENVIRONMENT} ==="
+                            terraform init \
+                            -backend-config="region=${AWS_REGION}" \
+                            -backend-config=${bucket} \
+                            -backend-config="key=$ENVIRONMENT/dashproject/terraform.tfstate" \
+                            -backend-config="profile=$ENVIRONMENT" \
+                            -force-copy \
+                            -backend=true
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Plan') {
+            when {
+                expression { params.SELECT_ACTION == 'DEPLOY'}
+            }
+            steps{
+                dir(COMP_DIR) {
+                    sh '''terraform plan -var-file=envs/"$ENVIRONMENT".tfvars'''
+                }
+            }
+        }		
+        stage('Check Formatting') {
+            when {
+                expression { params.SELECT_ACTION == 'DEPLOY'}
+            }
+                steps {
+                    echo '=== Checking Formatting ==='
+                    dir(COMP_DIR) {
+                        sh 'terraform fmt -check -diff'
+                    }
+                }
+            }
+        stage('Validate Config') {
+            when {
+                expression { params.SELECT_ACTION == 'DEPLOY'}
+            }
+            steps {
+                echo '=== Validating Config ==='
+                dir(COMP_DIR) {
+                    sh 'terraform validate'
+                }
+            }
+        }
+        stage('Apply') {
+            when {
+                expression { params.SELECT_ACTION == 'DEPLOY'}
+            }
+            steps {
+                script {
+                echo '=== Applying Changes ==='
+                    dir(COMP_DIR) {
+                    sh '''terraform apply -auto-approve -input=false -var "${IMG_VAR}"="${IMAGE_TAG}" -var-file=envs/"${ENVIRONMENT}".tfvars'''
+                    }
+                }
+            }
+        }
+        stage('Destroy') {
+            when {
+                expression { params.SELECT_ACTION == 'DESTROY' }
+            }
+            steps {
+                echo '=== Destroying Changes ==='
+                dir(COMP_DIR) {
+                    sh '''terraform destroy -auto-approve -input=false -var-file=envs/"${ENVIRONMENT}".tfvars'''
+                }
+            }
+        }
+	}
+	post {
+		failure {  
+			emailext subject: "ERROR CI: Project name -> ${env.JOB_NAME}", \
+			body: "<b>Build Failed</b></br>" +
+			"Project: ${env.JOB_NAME}</br>" +
+			"Build Number: ${env.BUILD_ID}</br>" +
+			"Build URL: ${env.BUILD_URL}", \
+			to: "${properties.recipient}", \
+			mimeType: 'text/html';
+		}  
+	}
+ }
